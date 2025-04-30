@@ -1,5 +1,9 @@
 # 🌏 Python Webflow Exporter
 
+[![PyPI version](https://img.shields.io/pypi/v/python-webflow-exporter)](https://pypi.org/project/python-webflow-exporter/)
+[![python](https://img.shields.io/badge/Python-3.10-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://spdx.org/licenses/MIT.html)
+
 A command-line tool to recursively scrape and download all assets (HTML, CSS, JS, images, media) from a public `.webflow.io` website. It also provides the option to automatically remove the Webflow badge from downloaded JavaScript files.
 
 > [!CAUTION]
@@ -25,15 +29,13 @@ A command-line tool to recursively scrape and download all assets (HTML, CSS, JS
 ## Installation
 
 ```bash
-git clone https://github.com/KoblerS/python-webflow-exporter.git
-cd python-webflow-exporter
-pip install -r requirements.txt
+pip install python-webflow-exporter
 ```
 
 ## Usage
 
 ```bash
-python webexp.py --url https://example.webflow.io
+webexp --url https://example.webflow.io
 ```
 
 ### Arguments
@@ -43,6 +45,7 @@ python webexp.py --url https://example.webflow.io
 | Argument         | Description                                | Default | Required |
 | ---------------- | ------------------------------------------ | ------- | -------- |
 | `--help`         | Show a help with available commands        | -       | ❌        |
+| `--version`      | Print the current version                  | -       | ❌        |
 | `--url`          | The public Webflow site URL to scrape      | –       | ✅        |
 | `--output`       | Output folder where the site will be saved | out     | ❌        |
 | `--remove-badge` | Whether to remove Webflow badge            | false   | ❌        |
@@ -56,6 +59,7 @@ After execution, your specified output folder will contain:
 - All crawled HTML pages
 - Associated assets like CSS, JS, images, and media
 - Cleaned HTML and JS files with Webflow references rewritten
+- Optionally removing the webflow badge
 
 ## Development Requirements
 
@@ -74,8 +78,8 @@ They are included in `requirements.txt`.
 
 ## License
 
-This project is released under the [MIT License](./LICENSE.md).
+This project is released under the [MIT License](https://github.com/KoblerS/python-webflow-exporter/blob/main/LICENSE.md).
 
 ## Disclaimer
 
-This tool is provided "as-is" without any warranties. The author is not responsible for misuse or damage caused by this software. For full terms, see [DISCLAIMER.md](./DISCLAIMER.md).
+This tool is provided "as-is" without any warranties. The author is not responsible for misuse or damage caused by this software. For full terms, see [DISCLAIMER.md](https://github.com/KoblerS/python-webflow-exporter/blob/main/DISCLAIMER.md).

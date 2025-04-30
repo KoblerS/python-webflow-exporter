@@ -1,20 +1,32 @@
-name: Publish cli binaries in release
+name: Publish to PyPI
 on:
   release:
     types:
       - published
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build-and-release:
-    name: Release version ${{ github.event.release.tag_name}} on ${{ matrix.runner-os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        runner-os: [windows-latest, ubuntu-latest, macos-latest, macos-13]
-    uses: ./.github/workflows/compile-source.yaml
-    secrets: inherit
-    with:
-      os: ${{ matrix.runner-os }}
-      tag: ${{ github.event.release.tag_name }}
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_VERSION: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install setuptools twine
+
+      - name: Build the project
+        run: python setup.py sdist
+
+      - name: Upload to PyPI
+        run: |
+          twine upload dist/*

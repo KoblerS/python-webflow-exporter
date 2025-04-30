@@ -22,12 +22,26 @@ jobs:
       - name: Verify Python linting
         run: |
           pip install -r requirements.txt
-          pylint webexp.py
+          pylint .
+  build:
+    runs-on: ubuntu-latest
+    name: Build code
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Build the project
+        run: |
+          pip install setuptools
+          python setup.py sdist
   release:
     runs-on: ubuntu-latest
     name: Draft release
-    needs: lint
+    needs: [lint, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: KoblerS/create-release@v1
+        with:
+          version-prefix: ""

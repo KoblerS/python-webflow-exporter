@@ -11,10 +11,12 @@ import argparse
 import os
 import sys
 import logging
+from importlib.metadata import version
 import requests
 from bs4 import BeautifulSoup
 from halo import Halo
 
+VERSION_NUM = version("webexp")
 CDN_URL = "https://cdn.prod.website-files.com"
 SCAN_CDN_REGEX = r"https:\/\/cdn\.prod\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css)\/)?"
 
@@ -42,9 +44,19 @@ def main():
         action="store_true",
         help="remove Badge from the HTML site"
     )
+    parser.add_argument(
+        "--version", 
+        action="version",
+        version=f"python-webflow-exporter version: {VERSION_NUM}",
+        help="show the version of the package"
+    )
     parser.add_argument("--debug", action="store_true", help="enable debug mode")
     parser.add_argument("--silent", action="store_true", help="silent, no output")
     args = parser.parse_args()
+
+    if args.debug and args.silent:
+        logger.error("Invalid configuration: 'debug' and 'silent' options cannot be used together.")
+        return
 
     if args.silent:
         logger.setLevel(logging.ERROR)
@@ -52,10 +64,6 @@ def main():
     if args.debug:
         logger.info("Debug mode enabled.")
         logger.setLevel(logging.DEBUG)
-
-    if args.debug and args.silent:
-        logger.error("Invalid configuration: 'debug' and 'silent' options cannot be used together.")
-        return
 
     output_path = os.path.join(os.getcwd(), args.output)
     if not check_url(args.url):
