@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 from halo import Halo
 
 CDN_URL = "https://cdn.prod.website-files.com"
-SCAN_CDN_REGEX = r"https://cdn\.prod\.website-files\.com/([a-f0-9]{24})/"
+SCAN_CDN_REGEX = r"https:\/\/cdn\.prod\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css)\/)?"
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +35,22 @@ def main():
     """Main function to handle command line arguments and initiate the scraping process."""
 
     parser = argparse.ArgumentParser(description="Python Webflow Exporter CLI")
-    parser.add_argument("--url", required=True, help="The URL to fetch data from")
-    parser.add_argument("--output", default="out", help="The file to save the output to")
-    parser.add_argument("--remove-badge", action="store_true", help="Remove Badge from the HTML")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--silent", action="store_true", help="Silent, no output")
+    parser.add_argument("--url", required=True, help="the URL to fetch data from")
+    parser.add_argument("--output", default="out", help="the file to save the output to")
+    parser.add_argument(
+        "--remove-badge", 
+        action="store_true",
+        help="remove Badge from the HTML site"
+    )
+    parser.add_argument("--debug", action="store_true", help="enable debug mode")
+    parser.add_argument("--silent", action="store_true", help="silent, no output")
     args = parser.parse_args()
 
     if args.silent:
         logger.setLevel(logging.ERROR)
 
     if args.debug:
+        logger.info("Debug mode enabled.")
         logger.setLevel(logging.DEBUG)
 
     if args.debug and args.silent:
@@ -54,7 +59,6 @@ def main():
 
     output_path = os.path.join(os.getcwd(), args.output)
     if not check_url(args.url):
-        logger.error("Invalid URL. Please provide a valid Webflow URL.")
         return
 
     if not check_output_path_exists(output_path):
@@ -87,7 +91,26 @@ def main():
 def check_url(url):
     """Check if the URL is a valid Webflow URL."""
 
-    return url.startswith("https://") and url.rstrip("/").endswith(".webflow.io")
+    request = requests.get(url, timeout=10)
+    if request.status_code != 200:
+        logger.error("Invalid URL. Please provide a valid Webflow URL.")
+        return False
+
+    # Check if the header contains <meta content="Webflow" name="generator">
+    try:
+        soup = BeautifulSoup(request.text, 'html.parser')
+        meta_tag = soup.find('meta', attrs={"name": "generator", "content": "Webflow"})
+        if not meta_tag:
+            logger.error(
+                "The provided URL is not a Webflow site. Ensure the website contains "
+                "'<meta content=\"Webflow\" name=\"generator\">' in the header."
+            )
+            return False
+    except (requests.RequestException, AttributeError) as e:
+        logger.error("Error while parsing the URL: %s", e)
+        return False
+
+    return True
 
 def check_output_path_exists(path):
     """Check if the output path exists."""
@@ -134,6 +157,9 @@ def scan_html(url):
         if "text/html" not in response.headers.get("Content-Type", ""):
             return
 
+        print(f"Scanning {current_url}...")
+        logger.debug("Found HTML page: %s", current_url)
+
         html.append(current_url)
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -155,6 +181,7 @@ def scan_html(url):
                 css_url = urljoin(current_url + "/", href)
                 if css_url.startswith(CDN_URL):
                     assets["css"].add(css_url)
+                    logger.debug("Found CSS: %s", css_url)
 
         for link in soup.find_all('link', rel=["apple-touch-icon", "shortcut icon"]):
             href = link.get('href')
@@ -162,6 +189,7 @@ def scan_html(url):
                 image_url = urljoin(current_url + "/", href)
                 if image_url.startswith(CDN_URL):
                     assets["images"].add(image_url)
+                    logger.debug("Found image file: %s", css_url)
 
         for script in soup.find_all('script', src=True):
             src = script['src']
@@ -169,6 +197,7 @@ def scan_html(url):
                 js_url = urljoin(current_url + "/", src)
                 if js_url.startswith(CDN_URL):
                     assets["js"].add(js_url)
+                    logger.debug("Found Javascript file: %s", css_url)
 
         for img in soup.find_all('img', src=True):
             src = img['src']
@@ -176,6 +205,7 @@ def scan_html(url):
                 img_url = urljoin(current_url + "/", src)
                 if img_url.startswith(CDN_URL):
                     assets["images"].add(img_url)
+                    logger.debug("Found image file: %s", css_url)
 
         for media in soup.find_all(['video', 'audio'], src=True):
             src = media['src']
@@ -183,6 +213,7 @@ def scan_html(url):
                 media_url = urljoin(current_url + "/", src)
                 if media_url.startswith(CDN_URL):
                     assets["media"].add(media_url)
+                    logger.debug("Found media file: %s", css_url)
 
     recursive_scan(url)
 
@@ -218,9 +249,10 @@ def download_assets(assets, output_folder):
                 parsed_uri.scheme + "://", ""
             ).replace(parsed_uri.netloc, "")
             if asset_type != 'html':
+
                 relative_path = re.sub(
                     SCAN_CDN_REGEX,
-                    "images/" if asset_type == "images" else "",
+                    asset_type + "/",
                     url
                 )
             if asset_type == 'html':
@@ -243,12 +275,12 @@ def process_html(file):
     # Process JS
     for tag in soup.find_all([ 'script']):
         if tag.has_attr('src') and tag['src'].startswith(CDN_URL):
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/", tag['src'])
+            tag['src'] = re.sub(SCAN_CDN_REGEX, "/js/", tag['src'])
 
     # Process CSS
     for tag in soup.find_all([ 'link'], rel="stylesheet"):
         if tag.has_attr('href') and tag['href'].startswith(CDN_URL):
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/", tag['href'])
+            tag['href'] = re.sub(SCAN_CDN_REGEX, "/css/", tag['href'])
 
     # Process links like favicons
     for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):

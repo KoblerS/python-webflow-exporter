@@ -42,6 +42,7 @@ python webexp.py --url https://example.webflow.io
 
 | Argument         | Description                                | Default | Required |
 | ---------------- | ------------------------------------------ | ------- | -------- |
+| `--help`         | Show a help with available commands        | -       | ❌        |
 | `--url`          | The public Webflow site URL to scrape      | –       | ✅        |
 | `--output`       | Output folder where the site will be saved | out     | ❌        |
 | `--remove-badge` | Whether to remove Webflow badge            | false   | ❌        |
@@ -64,13 +65,16 @@ Make sure you have Python 3.8+ installed. Required packages are:
 - argparse
 - beautifulsoup4
 - halo
-- html5lib
+
+_Optional:_
+- pyinstaller
+- pylint
 
 They are included in `requirements.txt`.
 
 ## License
 
-This project is released under the MIT License.
+This project is released under the [MIT License](./LICENSE.md).
 
 ## Disclaimer
 

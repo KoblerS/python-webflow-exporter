@@ -1,3 +1,4 @@
 [design]
 max-locals = 20
 max-branches = 20
+max-statements = 60
