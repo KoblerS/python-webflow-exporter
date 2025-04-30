@@ -2,3 +2,4 @@ requests
 argparse
 beautifulsoup4
 halo
+html5lib
