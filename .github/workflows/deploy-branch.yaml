@@ -1,0 +1,33 @@
+name: Code check
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+permissions:
+  # Required to request the OIDC JWT Token
+  id-token: write
+  # Required when GH token is used to authenticate with private repo
+  contents: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint code
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Verify Python linting
+        run: |
+          pip install -r requirements.txt
+          pylint webexp.py
+  release:
+    runs-on: ubuntu-latest
+    name: Draft release
+    needs: lint
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: KoblerS/create-release@v1

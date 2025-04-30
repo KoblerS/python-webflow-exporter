@@ -1,0 +1,3 @@
+[design]
+max-locals = 20
+max-branches = 20

@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Enable version updates for pip
+  - package-ecosystem: "pip"
+    # Look for `requirements.txt` in the `root` directory
+    directory: "/"
+    # Check the pip registry for updates every day (weekdays)
+    schedule:
+      interval: "daily"
+    groups:
+      minor-patch:
+        update-types: [minor, patch]
