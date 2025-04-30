@@ -1,0 +1,4 @@
+requests
+argparse
+beautifulsoup4
+halo
