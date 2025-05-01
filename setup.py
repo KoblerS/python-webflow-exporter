@@ -3,9 +3,11 @@
 import os
 from setuptools import setup
 
+version = os.getenv("PACKAGE_VERSION", "0.0.0")
+
 setup(
     name='python-webflow-exporter',
-    version=os.getenv("PACKAGE_VERSION", "0.0.0"),
+    version=version,
     py_modules=['webexp'],
     install_requires=[
       'requests==2.32.3', 

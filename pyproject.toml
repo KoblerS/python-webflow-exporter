@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "python-webflow-exporter"
 description = "A CLI tool to export Webflow pages"
-dynamic = ["version"]
+version = "1.0.0"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{ name = "Simon Kobler", email = "github@kobler.me" }]
 dependencies = [

@@ -25,7 +25,10 @@ jobs:
         run: pip install setuptools twine
 
       - name: Build the project
-        run: python setup.py sdist
+        run: |
+          # Ensure the version is set correctly in pyproject.toml
+          sed -i "s/^version = .*/version = \"$PACKAGE_VERSION\"/" pyproject.toml
+          python setup.py sdist
 
       - name: Upload to PyPI
         run: |
