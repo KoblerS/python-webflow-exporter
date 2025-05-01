@@ -18,6 +18,7 @@ from halo import Halo
 
 VERSION_NUM = version("python-webflow-exporter")
 CDN_URL_REGEX = r"^(.*?)website-files\.com"
+# pylint: disable=line-too-long
 SCAN_CDN_REGEX = r"https:\/\/(?:[\w.-]+)\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css|images)\/)?"
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,8 @@ def download_assets(assets, output_folder):
                     file.write(chunk)
             if asset_type == 'html':
                 process_html(output_path)
+            elif asset_type == 'css':
+                process_css(output_path, output_folder)
         except requests.RequestException as e:
             logger.error("Failed to download asset %s: %s", url, e)
 
@@ -259,7 +262,6 @@ def download_assets(assets, output_folder):
                 parsed_uri.scheme + "://", ""
             ).replace(parsed_uri.netloc, "")
             if asset_type != 'html':
-
                 relative_path = re.sub(
                     SCAN_CDN_REGEX,
                     asset_type + "/",
@@ -295,12 +297,12 @@ def process_html(file):
     # Process links like favicons
     for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href'])
+            tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href']).replace("//", "/")
 
     # Process IMG
     for tag in soup.find_all([ 'img']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src'])
+            tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src']).replace("//", "/")
 
     # Process Media
     for tag in soup.find_all([ 'video', 'audio']):
@@ -315,6 +317,41 @@ def process_html(file):
         f.write(str(formatted_html))
 
     logger.debug("Processed %s", file)
+
+def process_css(file_path, output_folder):
+    """Process the CSS file to fix asset links."""
+
+    if not os.path.exists(file_path):
+        logger.error("CSS folder does not exist: %s", file_path)
+        return
+
+    with open(file_path, 'r+', encoding='utf-8') as f:
+        content = f.read()
+        logger.info("Processing CSS file: %s", file_path)
+
+        # Find all image URLs in the CSS content
+        image_urls = re.findall(SCAN_CDN_REGEX, content)
+        for match in image_urls:
+            full_url = match[0]
+            if full_url:
+                # Download the image to the output path/images
+                image_output_path = os.path.join(os.path.dirname(output_folder), "images", os.path.basename(full_url))
+                try:
+                    response = requests.get(full_url, stream=True, timeout=10)
+                    response.raise_for_status()
+                    os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
+                    with open(image_output_path, 'wb') as img_file:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            img_file.write(chunk)
+                    logger.info("Downloaded image: %s", full_url)
+                except requests.RequestException as e:
+                    logger.error("Failed to download image %s: %s", full_url, e)
+
+        # Replace CDN URLs with local paths for images
+        updated_content = re.sub(SCAN_CDN_REGEX, "/images/", content).replace("//", "/")
+        f.seek(0)
+        f.write(updated_content)
+        f.truncate()
 
 def remove_badge(output_path):
     """Remove Webflow badge from the HTML files by modifying the JS files."""
