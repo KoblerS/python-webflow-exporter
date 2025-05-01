@@ -17,8 +17,8 @@ from bs4 import BeautifulSoup
 from halo import Halo
 
 VERSION_NUM = version("python-webflow-exporter")
-CDN_URL = "https://cdn.prod.website-files.com"
-SCAN_CDN_REGEX = r"https:\/\/cdn\.prod\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css)\/)?"
+CDN_URL_REGEX = r"^(.*?)website-files\.com"
+SCAN_CDN_REGEX = r"https:\/\/(?:[\w.-]+)\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css|images)\/)?"
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +107,13 @@ def check_url(url):
     # Check if the header contains <meta content="Webflow" name="generator">
     try:
         soup = BeautifulSoup(request.text, 'html.parser')
-        meta_tag = soup.find('meta', attrs={"name": "generator", "content": "Webflow"})
-        if not meta_tag:
+
+        # Check if any link contains the word "website-files.com"
+        links = soup.find_all('link', href=True)
+        if not any("website-files.com" in link['href'] for link in links):
             logger.error(
-                "The provided URL is not a Webflow site. Ensure the website contains "
-                "'<meta content=\"Webflow\" name=\"generator\">' in the header."
+                "The provided URL does not contain any links with 'website-files.com'. "
+                "Ensure the site is a valid Webflow site."
             )
             return False
     except (requests.RequestException, AttributeError) as e:
@@ -187,7 +189,7 @@ def scan_html(url):
             href = css.get('href')
             if href:
                 css_url = urljoin(current_url + "/", href)
-                if css_url.startswith(CDN_URL):
+                if re.match(CDN_URL_REGEX, css_url) is not None:
                     assets["css"].add(css_url)
                     logger.debug("Found CSS: %s", css_url)
 
@@ -195,7 +197,7 @@ def scan_html(url):
             href = link.get('href')
             if href:
                 image_url = urljoin(current_url + "/", href)
-                if image_url.startswith(CDN_URL):
+                if re.match(CDN_URL_REGEX, image_url) is not None:
                     assets["images"].add(image_url)
                     logger.debug("Found image file: %s", css_url)
 
@@ -203,7 +205,7 @@ def scan_html(url):
             src = script['src']
             if src:
                 js_url = urljoin(current_url + "/", src)
-                if js_url.startswith(CDN_URL):
+                if re.match(CDN_URL_REGEX, js_url) is not None:
                     assets["js"].add(js_url)
                     logger.debug("Found Javascript file: %s", css_url)
 
@@ -211,7 +213,7 @@ def scan_html(url):
             src = img['src']
             if src:
                 img_url = urljoin(current_url + "/", src)
-                if img_url.startswith(CDN_URL):
+                if re.match(CDN_URL_REGEX, img_url) is not None:
                     assets["images"].add(img_url)
                     logger.debug("Found image file: %s", css_url)
 
@@ -219,7 +221,7 @@ def scan_html(url):
             src = media['src']
             if src:
                 media_url = urljoin(current_url + "/", src)
-                if media_url.startswith(CDN_URL):
+                if re.match(CDN_URL_REGEX, media_url) is not None:
                     assets["media"].add(media_url)
                     logger.debug("Found media file: %s", css_url)
 
@@ -282,27 +284,27 @@ def process_html(file):
 
     # Process JS
     for tag in soup.find_all([ 'script']):
-        if tag.has_attr('src') and tag['src'].startswith(CDN_URL):
+        if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
             tag['src'] = re.sub(SCAN_CDN_REGEX, "/js/", tag['src'])
 
     # Process CSS
     for tag in soup.find_all([ 'link'], rel="stylesheet"):
-        if tag.has_attr('href') and tag['href'].startswith(CDN_URL):
+        if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
             tag['href'] = re.sub(SCAN_CDN_REGEX, "/css/", tag['href'])
 
     # Process links like favicons
     for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):
-        if tag.has_attr('href') and tag['href'].startswith(CDN_URL):
+        if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
             tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href'])
 
     # Process IMG
     for tag in soup.find_all([ 'img']):
-        if tag.has_attr('src') and tag['src'].startswith(CDN_URL):
+        if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
             tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src'])
 
     # Process Media
     for tag in soup.find_all([ 'video', 'audio']):
-        if tag.has_attr('src') and tag['src'].startswith(CDN_URL):
+        if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
             tag['src'] = re.sub(SCAN_CDN_REGEX, "/media/", tag['src'])
 
     # Format and unminify the HTML
@@ -328,6 +330,7 @@ def remove_badge(output_path):
                     content = f.read()
                     if content.find('class="w-webflow-badge"') != -1:
                         logger.info("\nRemoving Webflow badge from %s", file_path)
+                        content = content.replace(r'/\.webflow\.io$/i.test(h)', 'false')
                         content = content.replace('if(a){i&&e.remove();', 'if(true){i&&e.remove();')
                         f.seek(0)
                         f.write(content)
