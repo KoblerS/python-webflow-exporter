@@ -16,7 +16,7 @@ import requests
 from bs4 import BeautifulSoup
 from halo import Halo
 
-VERSION_NUM = version("webexp")
+VERSION_NUM = version("python-webflow-exporter")
 CDN_URL = "https://cdn.prod.website-files.com"
 SCAN_CDN_REGEX = r"https:\/\/cdn\.prod\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css)\/)?"
 

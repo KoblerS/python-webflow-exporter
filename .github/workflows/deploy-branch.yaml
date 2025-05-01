@@ -22,7 +22,7 @@ jobs:
       - name: Verify Python linting
         run: |
           pip install -r requirements.txt
-          pylint .
+          pylint webexp
   build:
     runs-on: ubuntu-latest
     name: Build code
@@ -34,7 +34,7 @@ jobs:
       - name: Build the project
         run: |
           pip install setuptools
-          python setup.py sdist
+          python -m pip install .
   release:
     runs-on: ubuntu-latest
     name: Draft release

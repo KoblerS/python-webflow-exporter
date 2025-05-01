@@ -22,13 +22,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install setuptools twine
+        run: pip install build twine
 
       - name: Build the project
         run: |
           # Ensure the version is set correctly in pyproject.toml
           sed -i "s/^version = .*/version = \"$PACKAGE_VERSION\"/" pyproject.toml
-          python setup.py sdist
+          python -m build
 
       - name: Upload to PyPI
         run: |

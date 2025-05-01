@@ -19,7 +19,8 @@ dependencies = [
     "setuptools==80.1.0"
 ]
 
-[project.scripts]
-webexp = "webexp:main"
+[tool.setuptools]
+packages = ["webexp"]
 
-[tool.setuptools_scm]
+[project.scripts]
+webexp = "webexp.cli:main"
