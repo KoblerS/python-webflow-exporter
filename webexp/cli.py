@@ -11,6 +11,7 @@ import argparse
 import os
 import sys
 import logging
+from datetime import datetime
 from importlib.metadata import version
 import requests
 from bs4 import BeautifulSoup
@@ -19,7 +20,7 @@ from halo import Halo
 VERSION_NUM = version("python-webflow-exporter")
 CDN_URL_REGEX = r"^(.*?)website-files\.com"
 # pylint: disable=line-too-long
-SCAN_CDN_REGEX = r"https:\/\/(?:[\w.-]+)\.website-files\.com(?:\/([a-f0-9]{24}))?(?:\/(js|css|images)\/)?"
+SCAN_CDN_REGEX = r"https:\/\/(?:[\w.-]+)\.website-files\.com(?:\/[a-f0-9]{24})?(?:\/(?:js|css|images))?(?:\/[\w\-./%]+)?"
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,23 @@ stdout_log_formatter = logging.Formatter(
 stdout_log_handler = logging.StreamHandler(stream=sys.stdout)
 stdout_log_handler.setLevel(logging.INFO)
 stdout_log_handler.setFormatter(stdout_log_formatter)
-
 logger.addHandler(stdout_log_handler)
-logger.setLevel(logging.INFO)
 
 def main():
     """Main function to handle command line arguments and initiate the scraping process."""
 
     parser = argparse.ArgumentParser(description="Python Webflow Exporter CLI")
     parser.add_argument("--url", required=True, help="the URL to fetch data from")
-    parser.add_argument("--output", default="out", help="the file to save the output to")
+    parser.add_argument("--output", default="out", help="the folder to save the output to")
     parser.add_argument(
         "--remove-badge", 
         action="store_true",
-        help="remove Badge from the HTML site"
+        help="remove Webflow badge"
+    )
+    parser.add_argument(
+        "--generate-sitemap", 
+        action="store_true",
+        help="generate a sitemap.xml file"
     )
     parser.add_argument(
         "--version", 
@@ -74,6 +78,7 @@ def main():
         logger.error("Output path does not exist. Please provide a valid path.")
         return
 
+    # Clear output folder and create it if it doesn't exist
     clear_output_folder(output_path)
 
     spinner = Halo(text='Scraping the web...', spinner='dots')
@@ -85,6 +90,7 @@ def main():
 
     spinner.start(text='Downloading...')
 
+    # Download scraped assets
     download_assets(html_sites, output_path)
     spinner.stop()
 
@@ -93,6 +99,11 @@ def main():
     if args.remove_badge:
         spinner.start(text='Removing webflow badge...')
         remove_badge(output_path)
+        spinner.stop()
+
+    if args.generate_sitemap:
+        spinner.start(text='Generating sitemap...')
+        generate_sitemap(output_path, html_sites)
         spinner.stop()
 
     spinner.stop()
@@ -331,6 +342,7 @@ def process_css(file_path, output_folder):
 
         # Find all image URLs in the CSS content
         image_urls = re.findall(SCAN_CDN_REGEX, content)
+        print("Found %d image URLs in CSS file", image_urls)
         for match in image_urls:
             full_url = match[0]
             if full_url:
@@ -372,6 +384,22 @@ def remove_badge(output_path):
                         f.seek(0)
                         f.write(content)
                         f.truncate()
+
+def generate_sitemap(output_path, html_sites):
+    """Generate a sitemap.xml file from the HTML files."""
+    sitemap_path = os.path.join(output_path, "sitemap.xml")
+    with open(sitemap_path, 'w', encoding='utf-8') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        f.write('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap-image/1.1">\n')
+        for url in html_sites["html"]:
+            f.write('  <url>\n')
+            f.write(f'    <loc>{url}</loc>\n')
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            f.write(f'    <lastmod>{current_date}</lastmod>\n')
+            f.write('  </url>\n')
+        f.write('</urlset>\n')
+
+    logger.info("Sitemap generated at %s", sitemap_path)
 
 if __name__ == "__main__":
     main()

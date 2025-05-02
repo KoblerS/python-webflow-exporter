@@ -14,7 +14,7 @@ A command-line tool to recursively scrape and download all assets (HTML, CSS, JS
 > - The author does not condone the use of this code for commercial projects or to violate Webflow’s terms of service.
 > - The author is not affiliated with Webflow Inc. in any way.
 > - The author assumes no liability or responsibility for any damage, loss, or legal issues resulting from the use of this repository.
-> 
+>
 > If you are unsure about whether your intended use complies with applicable laws or platform terms, please consult legal counsel or refrain from using this repository.
 
 ## Features
@@ -25,6 +25,7 @@ A command-line tool to recursively scrape and download all assets (HTML, CSS, JS
 - Optional removal of Webflow badge
 - Fast processing
 - Complete export of site
+- Automatic creation of a sitemap.xml
 
 ## Installation
 
@@ -40,17 +41,16 @@ webexp --url https://example.webflow.io
 
 ### Arguments
 
-### Arguments
-
-| Argument         | Description                                | Default | Required |
-| ---------------- | ------------------------------------------ | ------- | -------- |
-| `--help`         | Show a help with available commands        | -       | ❌        |
-| `--version`      | Print the current version                  | -       | ❌        |
-| `--url`          | The public Webflow site URL to scrape      | –       | ✅        |
-| `--output`       | Output folder where the site will be saved | out     | ❌        |
-| `--remove-badge` | Whether to remove Webflow badge            | false   | ❌        |
-| `--debug`        | Enable debug output                        | false   | ❌        |
-| `--silent`       | Enable silent, no output                   | false   | ❌        |
+| Argument             | Description                                | Default | Required |
+| -------------------- | ------------------------------------------ | ------- | -------- |
+| `--help`             | Show a help with available commands        | -       | ❌       |
+| `--version`          | Print the current version                  | -       | ❌       |
+| `--url`              | The public Webflow site URL to scrape      | –       | ✅       |
+| `--output`           | Output folder where the site will be saved | out     | ❌       |
+| `--remove-badge`     | remove Webflow badge                       | false   | ❌       |
+| `--generate-sitemap` | generate a sitemap.xml file                | false   | ❌       |
+| `--debug`            | Enable debug output                        | false   | ❌       |
+| `--silent`           | Enable silent, no output                   | false   | ❌       |
 
 ### Output
 
@@ -71,10 +71,24 @@ Make sure you have Python 3.8+ installed. Required packages are:
 - halo
 
 _Optional:_
+
 - pyinstaller
 - pylint
 
 They are included in `requirements.txt`.
+
+## Local development
+
+Clone the script and run the following commands to test it
+
+```bash
+git clone https://github.com/KoblerS/python-webflow-exporter.git
+cd python-webflow-exporter
+
+pip install -e .
+```
+
+Refer to [#usage](#usage) for more information on how to use the CLI.
 
 ## License
 
