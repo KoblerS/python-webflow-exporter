@@ -2,5 +2,5 @@ requests==2.32.4
 argparse==1.4.0
 beautifulsoup4==4.13.4
 halo==0.0.31
-pylint==3.3.7
+pylint==3.3.8
 setuptools==80.9.0
