@@ -29,14 +29,32 @@ A command-line tool to recursively scrape and download all assets (HTML, CSS, JS
 
 ## Installation
 
+### Option 1: Install with pip
+
 ```bash
 pip install python-webflow-exporter
 ```
 
+### Option 2: Run directly with uv (recommended for one-time use)
+
+```bash
+uv tool run --from python-webflow-exporter webexp --url https://example.webflow.io
+```
+
+No installation required - `uv` will automatically handle dependencies and run the tool.
+
 ## Usage
+
+### After pip installation
 
 ```bash
 webexp --url https://example.webflow.io
+```
+
+### Direct usage with uv (no installation needed)
+
+```bash
+uv tool run --from python-webflow-exporter webexp --url https://example.webflow.io
 ```
 
 ### Arguments
