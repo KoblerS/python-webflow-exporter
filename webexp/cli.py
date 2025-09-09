@@ -116,23 +116,45 @@ def check_url(url):
         logger.error("Invalid URL. Please provide a valid Webflow URL.")
         return False
 
-    # Check if the header contains <meta content="Webflow" name="generator">
+    # Check for multiple Webflow indicators
     try:
         soup = BeautifulSoup(request.text, 'html.parser')
 
-        # Check if any link contains the word "website-files.com"
+        webflow_indicators = []
+
+        # Check 1: Links with "website-files.com" (existing check)
         links = soup.find_all('link', href=True)
-        if not any("website-files.com" in link['href'] for link in links):
-            logger.error(
-                "The provided URL does not contain any links with 'website-files.com'. "
-                "Ensure the site is a valid Webflow site."
-            )
-            return False
+        has_webflow_links = any("website-files.com" in link['href'] for link in links)
+        if has_webflow_links:
+            webflow_indicators.append("website-files.com links")
+
+        # Check 2: Scripts with "website-files.com" (especially webflow.js)
+        scripts = soup.find_all('script', src=True)
+        has_webflow_scripts = any("website-files.com" in script['src'] for script in scripts)
+        if has_webflow_scripts:
+            webflow_indicators.append("website-files.com scripts")
+
+        # Check 3: Meta generator tag with "Webflow"
+        meta_generator = soup.find('meta', attrs={'name': 'generator', 'content': True})
+        has_webflow_meta = (meta_generator and
+                          'webflow' in meta_generator.get('content', '').lower())
+        if has_webflow_meta:
+            webflow_indicators.append("Webflow meta generator")
+
+        # If any indicators are found, consider it a valid Webflow site
+        if webflow_indicators:
+            logger.debug("Webflow site detected with indicators: %s", ', '.join(webflow_indicators))
+            return True
+
+        logger.error(
+            "The provided URL does not appear to be a Webflow site. "
+            "No Webflow indicators found (website-files.com links/scripts or Webflow meta generator tag). "
+            "Ensure the site is a valid Webflow site."
+        )
+        return False
     except (requests.RequestException, AttributeError) as e:
         logger.error("Error while parsing the URL: %s", e)
         return False
-
-    return True
 
 def check_output_path_exists(path):
     """Check if the output path exists."""
