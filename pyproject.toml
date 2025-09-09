@@ -11,11 +11,11 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{ name = "Simon Kobler", email = "github@kobler.me" }]
 dependencies = [
-    "requests==2.32.4", 
+    "requests==2.32.5", 
     "argparse==1.4.0",
-    "beautifulsoup4==4.13.4",
+    "beautifulsoup4==4.13.5",
     "halo==0.0.31",
-    "pylint==3.3.7",
+    "pylint==3.3.8",
     "setuptools==80.9.0"
 ]
 
