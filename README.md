@@ -29,11 +29,44 @@ A command-line tool to recursively scrape and download all assets (HTML, CSS, JS
 
 ## Installation
 
+### Option 1: Install with pip
+
 ```bash
 pip install python-webflow-exporter
 ```
 
+### Option 2: Run directly with uv (recommended for one-time use)
+
+First, install `uv` if you haven't already:
+
+**Linux/macOS:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**macOS (with Homebrew):**
+```bash
+brew install uv
+```
+
+**Windows:**
+```bash
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+For other installation methods, see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+Then run the tool directly:
+
+```bash
+uv tool run --from python-webflow-exporter webexp --url https://example.webflow.io
+```
+
+No installation required - `uv` will automatically handle dependencies and run the tool.
+
 ## Usage
+
+### After pip installation
 
 ```bash
 webexp --url https://example.webflow.io
