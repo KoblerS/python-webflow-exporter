@@ -11,6 +11,7 @@ import argparse
 import os
 import sys
 import logging
+import uuid
 from datetime import datetime
 from importlib.metadata import version
 import requests
@@ -271,22 +272,34 @@ def scan_html(url):
 
 def download_assets(assets, output_folder):
     """Download assets from the CDN and save them to the output folder."""
+    # Create a mapping for images: original_url -> uuid_filename
+    image_mapping = {}
+
     def download_file(url, output_path, asset_type):
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            logger.info(output_path)
             with open(output_path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
             if asset_type == 'html':
-                process_html(output_path)
+                process_html(output_path, image_mapping)
             elif asset_type == 'css':
-                process_css(output_path, output_folder)
+                process_css(output_path, output_folder, image_mapping)
         except requests.RequestException as e:
             logger.error("Failed to download asset %s: %s", url, e)
 
-    for asset_type, urls in assets.items():
+    # Process in specific order: images first, then media, js, css, and finally html
+    # This ensures image_mapping is complete before processing HTML/CSS files
+    asset_order = ['images', 'media', 'js', 'css', 'html']
+
+    for asset_type in asset_order:
+        if asset_type not in assets:
+            continue
+
+        urls = assets[asset_type]
         logger.debug("Downloading %s assets...", asset_type)
         for url in urls:
             # Create the output path by preserving the folder structure
@@ -294,12 +307,19 @@ def download_assets(assets, output_folder):
             relative_path = url.replace(
                 parsed_uri.scheme + "://", ""
             ).replace(parsed_uri.netloc, "")
-            if asset_type != 'html':
-                relative_path = re.sub(
-                    SCAN_CDN_REGEX,
-                    asset_type + "/",
-                    url
-                )
+
+            if asset_type == 'images':
+                # Generate UUID for images and preserve file extension
+                file_extension = os.path.splitext(os.path.basename(parsed_uri.path))[1]
+                uuid_filename = f"{uuid.uuid4()}{file_extension}"
+                image_mapping[url] = uuid_filename
+                logger.debug("Image mapping: %s -> %s", url, uuid_filename)
+                relative_path = f"images/{uuid_filename}"
+            elif asset_type != 'html':
+                # Extract the filename from the URL for non-image assets
+                filename = os.path.basename(parsed_uri.path)
+                relative_path = f"{asset_type}/{filename}"
+
             if asset_type == 'html':
                 if relative_path == "":
                     relative_path = "index.html"
@@ -311,36 +331,71 @@ def download_assets(assets, output_folder):
             logger.info("Downloading %s to %s", url, output_path)
             download_file(url, output_path, asset_type)
 
-def process_html(file):
+def process_html(file, image_mapping):
     """Process the HTML file to fix asset links and format the HTML."""
+
+    logger.debug("Processing HTML with %d image mappings", len(image_mapping))
+    if logger.isEnabledFor(logging.DEBUG):
+        for url, uuid_name in list(image_mapping.items())[:5]:  # Show first 5 mappings
+            logger.debug("  Mapping sample: %s -> %s", url, uuid_name)
 
     with open(file, 'r', encoding='utf-8') as f:
         soup = BeautifulSoup(f, 'html.parser')
 
     # Process JS
-    for tag in soup.find_all([ 'script']):
+    for tag in soup.find_all(['script']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/js/", tag['src'])
+            parsed_url = urlparse(tag['src'])
+            filename = os.path.basename(parsed_url.path)
+            tag['src'] = f"/js/{filename}"
 
     # Process CSS
-    for tag in soup.find_all([ 'link'], rel="stylesheet"):
+    for tag in soup.find_all(['link'], rel="stylesheet"):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/css/", tag['href'])
+            parsed_url = urlparse(tag['href'])
+            filename = os.path.basename(parsed_url.path)
+            tag['href'] = f"/css/{filename}"
 
-    # Process links like favicons
-    for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):
+    # Process links like favicons - use UUID mapping
+    for tag in soup.find_all(['link'], rel=["apple-touch-icon", "shortcut icon"]):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href']).replace("//", "/")
+            original_url = tag['href']
 
-    # Process IMG
-    for tag in soup.find_all([ 'img']):
+            logger.debug("Looking up favicon: %s", original_url)
+            if original_url in image_mapping:
+                uuid_filename = image_mapping[original_url]
+                logger.debug("Found mapping: %s -> %s", original_url, uuid_filename)
+                tag['href'] = f"/images/{uuid_filename}"
+            else:
+                logger.warning("Favicon not in mapping: %s", original_url)
+                # Fallback to original filename if not in mapping
+                parsed_url = urlparse(tag['href'])
+                filename = os.path.basename(parsed_url.path)
+                tag['href'] = f"/images/{filename}"
+
+    # Process IMG - use UUID mapping
+    for tag in soup.find_all(['img']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src']).replace("//", "/")
+            original_url = tag['src']
+
+            logger.debug("Looking up image: %s", original_url)
+            if original_url in image_mapping:
+                uuid_filename = image_mapping[original_url]
+                logger.debug("Found mapping: %s -> %s", original_url, uuid_filename)
+                tag['src'] = f"/images/{uuid_filename}"
+            else:
+                logger.warning("Image not in mapping: %s", original_url)
+                # Fallback to original filename if not in mapping
+                parsed_url = urlparse(tag['src'])
+                filename = os.path.basename(parsed_url.path)
+                tag['src'] = f"/images/{filename}"
 
     # Process Media
-    for tag in soup.find_all([ 'video', 'audio']):
+    for tag in soup.find_all(['video', 'audio']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/media/", tag['src'])
+            parsed_url = urlparse(tag['src'])
+            filename = os.path.basename(parsed_url.path)
+            tag['src'] = f"/media/{filename}"
 
     # Format and unminify the HTML
     formatted_html = soup.prettify()
@@ -351,7 +406,7 @@ def process_html(file):
 
     logger.debug("Processed %s", file)
 
-def process_css(file_path, output_folder):
+def process_css(file_path, output_folder, image_mapping):
     """Process the CSS file to fix asset links."""
 
     if not os.path.exists(file_path):
@@ -364,12 +419,20 @@ def process_css(file_path, output_folder):
 
         # Find all image URLs in the CSS content
         image_urls = re.findall(SCAN_CDN_REGEX, content)
-        print("Found %d image URLs in CSS file", image_urls)
-        for match in image_urls:
-            full_url = match[0]
+        logger.info("Found %d image URLs in CSS file", len(image_urls))
+        for full_url in image_urls:
             if full_url:
-                # Download the image to the output path/images
-                image_output_path = os.path.join(os.path.dirname(output_folder), "images", os.path.basename(full_url))
+                # Check if image already in mapping, otherwise generate new UUID
+                if full_url not in image_mapping:
+                    # Download the image to the output path/images with UUID name
+                    parsed_url = urlparse(full_url)
+                    file_extension = os.path.splitext(os.path.basename(parsed_url.path))[1]
+                    uuid_filename = f"{uuid.uuid4()}{file_extension}"
+                    image_mapping[full_url] = uuid_filename
+                else:
+                    uuid_filename = image_mapping[full_url]
+
+                image_output_path = os.path.join(output_folder, "images", uuid_filename)
                 try:
                     response = requests.get(full_url, stream=True, timeout=10)
                     response.raise_for_status()
@@ -377,12 +440,23 @@ def process_css(file_path, output_folder):
                     with open(image_output_path, 'wb') as img_file:
                         for chunk in response.iter_content(chunk_size=8192):
                             img_file.write(chunk)
-                    logger.info("Downloaded image: %s", full_url)
+                    logger.info("Downloaded image: %s to %s", full_url, uuid_filename)
                 except requests.RequestException as e:
                     logger.error("Failed to download image %s: %s", full_url, e)
 
-        # Replace CDN URLs with local paths for images
-        updated_content = re.sub(SCAN_CDN_REGEX, "/images/", content).replace("//", "/")
+        # Replace CDN URLs with local paths using UUID filenames
+        def replace_url(match):
+            url = match.group(0)
+            if url in image_mapping:
+                uuid_filename = image_mapping[url]
+                return f"/images/{uuid_filename}"
+            else:
+                # Fallback to original filename if not in mapping
+                parsed_url = urlparse(url)
+                filename = os.path.basename(parsed_url.path)
+                return f"/images/{filename}"
+
+        updated_content = re.sub(SCAN_CDN_REGEX, replace_url, content)
         f.seek(0)
         f.write(updated_content)
         f.truncate()
