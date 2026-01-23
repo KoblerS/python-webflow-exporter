@@ -275,7 +275,15 @@ def download_assets(assets, output_folder):
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            # Ensure the directory exists; handle case where a file exists at the dir path
+            dir_path = os.path.dirname(output_path)
+            if dir_path:
+                if os.path.exists(dir_path) and not os.path.isdir(dir_path):
+                    logger.error("Cannot create directory %s: file exists at this path", dir_path)
+                    return
+                os.makedirs(dir_path, exist_ok=True)
+
             with open(output_path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
@@ -291,20 +299,21 @@ def download_assets(assets, output_folder):
         for url in urls:
             # Create the output path by preserving the folder structure
             parsed_uri = urlparse(url)
-            relative_path = url.replace(
-                parsed_uri.scheme + "://", ""
-            ).replace(parsed_uri.netloc, "")
-            if asset_type != 'html':
-                relative_path = re.sub(
-                    SCAN_CDN_REGEX,
-                    asset_type + "/",
-                    url
-                )
             if asset_type == 'html':
+                relative_path = url.replace(
+                    parsed_uri.scheme + "://", ""
+                ).replace(parsed_uri.netloc, "")
                 if relative_path == "":
                     relative_path = "index.html"
                 else:
                     relative_path = f"{relative_path}.html"
+            else:
+                # For non-HTML assets, preserve the filename from the URL
+                filename = os.path.basename(parsed_uri.path)
+                if not filename:
+                    # If no filename in path, use a hash of the URL
+                    filename = f"asset_{hash(url) & 0xFFFFFFFF:08x}"
+                relative_path = os.path.join(asset_type, filename)
 
             output_path = os.path.join(output_folder,  relative_path.strip("/"))
 
@@ -320,27 +329,38 @@ def process_html(file):
     # Process JS
     for tag in soup.find_all([ 'script']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/js/", tag['src'])
+            filename = os.path.basename(urlparse(tag['src']).path)
+            tag['src'] = f"/js/{filename}"
+            # Remove integrity attribute since the file content may have been modified
+            if tag.has_attr('integrity'):
+                del tag['integrity']
 
     # Process CSS
     for tag in soup.find_all([ 'link'], rel="stylesheet"):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/css/", tag['href'])
+            filename = os.path.basename(urlparse(tag['href']).path)
+            tag['href'] = f"/css/{filename}"
+            # Remove integrity attribute since the file content may have been modified
+            if tag.has_attr('integrity'):
+                del tag['integrity']
 
     # Process links like favicons
     for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href']).replace("//", "/")
+            filename = os.path.basename(urlparse(tag['href']).path)
+            tag['href'] = f"/images/{filename}"
 
     # Process IMG
     for tag in soup.find_all([ 'img']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src']).replace("//", "/")
+            filename = os.path.basename(urlparse(tag['src']).path)
+            tag['src'] = f"/images/{filename}"
 
     # Process Media
     for tag in soup.find_all([ 'video', 'audio']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/media/", tag['src'])
+            filename = os.path.basename(urlparse(tag['src']).path)
+            tag['src'] = f"/media/{filename}"
 
     # Format and unminify the HTML
     formatted_html = soup.prettify()
@@ -362,27 +382,78 @@ def process_css(file_path, output_folder):
         content = f.read()
         logger.info("Processing CSS file: %s", file_path)
 
-        # Find all image URLs in the CSS content
-        image_urls = re.findall(SCAN_CDN_REGEX, content)
-        print("Found %d image URLs in CSS file", image_urls)
-        for match in image_urls:
-            full_url = match[0]
+        # Find all asset URLs in the CSS content (images, fonts, etc.)
+        asset_urls = re.findall(SCAN_CDN_REGEX, content)
+        logger.info("Found %d asset URLs in CSS file", len(asset_urls))
+        for full_url in asset_urls:
             if full_url:
-                # Download the image to the output path/images
-                image_output_path = os.path.join(os.path.dirname(output_folder), "images", os.path.basename(full_url))
+                # Clean URL: strip whitespace and trailing %20 (URL-encoded space)
+                full_url = full_url.rstrip()
+                while full_url.endswith('%20'):
+                    full_url = full_url[:-3]
+
+                # Skip URLs without file extensions (likely incomplete/malformed)
+                parsed_path = urlparse(full_url).path
+                filename = os.path.basename(parsed_path)
+                if '.' not in filename:
+                    logger.warning("Skipping URL without file extension: %s", full_url)
+                    continue
+
+                # Determine asset type by file extension and download to appropriate folder
+                ext = filename.lower().split('.')[-1]
+                if ext in ['woff', 'woff2', 'ttf', 'eot', 'otf']:
+                    asset_folder = "fonts"
+                elif ext in ['js']:
+                    asset_folder = "js"
+                elif ext in ['css']:
+                    asset_folder = "css"
+                elif ext in ['mp4', 'webm', 'ogg', 'mp3', 'wav']:
+                    asset_folder = "media"
+                else:
+                    asset_folder = "images"
+
+                asset_output_path = os.path.join(output_folder, asset_folder, filename)
                 try:
                     response = requests.get(full_url, stream=True, timeout=10)
                     response.raise_for_status()
-                    os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
-                    with open(image_output_path, 'wb') as img_file:
+                    os.makedirs(os.path.dirname(asset_output_path), exist_ok=True)
+                    with open(asset_output_path, 'wb') as asset_file:
                         for chunk in response.iter_content(chunk_size=8192):
-                            img_file.write(chunk)
-                    logger.info("Downloaded image: %s", full_url)
+                            asset_file.write(chunk)
+                    logger.info("Downloaded %s asset: %s", asset_folder, full_url)
                 except requests.RequestException as e:
-                    logger.error("Failed to download image %s: %s", full_url, e)
+                    logger.error("Failed to download asset %s: %s", full_url, e)
 
-        # Replace CDN URLs with local paths for images
-        updated_content = re.sub(SCAN_CDN_REGEX, "/images/", content).replace("//", "/")
+        # Replace CDN URLs with local paths, preserving filenames and categorizing by type
+        def replace_cdn_url(match):
+            url = match.group(0).rstrip()
+            while url.endswith('%20'):
+                url = url[:-3]
+
+            parsed_url = urlparse(url)
+            filename = os.path.basename(parsed_url.path)
+
+            # Only replace URLs with file extensions (others are malformed/incomplete)
+            if '.' not in filename:
+                return url
+
+            # Determine asset type by file extension
+            ext = filename.lower().split('.')[-1]
+            if ext in ['js']:
+                return f"/js/{filename}"
+            elif ext in ['css']:
+                return f"/css/{filename}"
+            elif ext in ['woff', 'woff2', 'ttf', 'eot', 'otf']:
+                return f"/fonts/{filename}"
+            elif ext in ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico']:
+                return f"/images/{filename}"
+            elif ext in ['mp4', 'webm', 'ogg', 'mp3', 'wav']:
+                return f"/media/{filename}"
+            else:
+                # Default to images for unknown types
+                return f"/images/{filename}"
+
+        updated_content = re.sub(SCAN_CDN_REGEX, replace_cdn_url, content)
         f.seek(0)
         f.write(updated_content)
         f.truncate()
