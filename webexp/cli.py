@@ -11,6 +11,7 @@ import argparse
 import os
 import sys
 import logging
+import uuid
 from datetime import datetime
 from importlib.metadata import version
 import requests
@@ -271,47 +272,97 @@ def scan_html(url):
 
 def download_assets(assets, output_folder):
     """Download assets from the CDN and save them to the output folder."""
+    # Create a mapping of original URLs to UUID-based filenames
+    url_to_filename = {}
+
     def download_file(url, output_path, asset_type):
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            # Ensure the directory exists; handle case where a file exists at the dir path
+            dir_path = os.path.dirname(output_path)
+            if dir_path:
+                if os.path.exists(dir_path) and not os.path.isdir(dir_path):
+                    logger.error("Cannot create directory %s: file exists at this path", dir_path)
+                    return None
+                os.makedirs(dir_path, exist_ok=True)
+
             with open(output_path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=8192):
                     file.write(chunk)
-            if asset_type == 'html':
-                process_html(output_path)
-            elif asset_type == 'css':
-                process_css(output_path, output_folder)
+            return output_path
         except requests.RequestException as e:
             logger.error("Failed to download asset %s: %s", url, e)
+            return None
 
+    # First pass: download all non-HTML assets with UUID names and build mapping
     for asset_type, urls in assets.items():
+        if asset_type == 'html':
+            continue
         logger.debug("Downloading %s assets...", asset_type)
         for url in urls:
-            # Create the output path by preserving the folder structure
+            parsed_uri = urlparse(url)
+            original_filename = os.path.basename(parsed_uri.path)
+            if not original_filename:
+                original_filename = f"asset_{hash(url) & 0xFFFFFFFF:08x}"
+
+            # Get file extension
+            if '.' in original_filename:
+                ext = '.' + original_filename.split('.')[-1]
+            else:
+                ext = ''
+
+            # Generate UUID-based filename
+            uuid_filename = str(uuid.uuid4()) + ext
+            relative_path = os.path.join(asset_type, uuid_filename)
+            output_path = os.path.join(output_folder, relative_path.strip("/"))
+
+            logger.info("Downloading %s to %s", url, output_path)
+            result = download_file(url, output_path, asset_type)
+
+            if result:
+                # Store mapping: original_filename -> new path relative to output folder
+                url_to_filename[url] = f"/{asset_type}/{uuid_filename}"
+                # Also store by original filename for CSS @import and url() references
+                url_to_filename[original_filename] = f"/{asset_type}/{uuid_filename}"
+
+    # Process CSS files to update internal references and download additional assets
+    for asset_type, urls in assets.items():
+        if asset_type == 'css':
+            for url in urls:
+                css_path = None
+                # Find the downloaded CSS file path from our mapping
+                for orig_url, mapped_path in url_to_filename.items():
+                    if orig_url == url:
+                        css_path = os.path.join(output_folder, mapped_path.lstrip('/'))
+                        break
+                if css_path and os.path.exists(css_path):
+                    process_css(css_path, output_folder, url_to_filename)
+
+    # Second pass: download and process HTML files
+    for asset_type, urls in assets.items():
+        if asset_type != 'html':
+            continue
+        logger.debug("Downloading %s assets...", asset_type)
+        for url in urls:
             parsed_uri = urlparse(url)
             relative_path = url.replace(
                 parsed_uri.scheme + "://", ""
             ).replace(parsed_uri.netloc, "")
-            if asset_type != 'html':
-                relative_path = re.sub(
-                    SCAN_CDN_REGEX,
-                    asset_type + "/",
-                    url
-                )
-            if asset_type == 'html':
-                if relative_path == "":
-                    relative_path = "index.html"
-                else:
-                    relative_path = f"{relative_path}.html"
+            if relative_path == "":
+                relative_path = "index.html"
+            else:
+                relative_path = f"{relative_path}.html"
 
-            output_path = os.path.join(output_folder,  relative_path.strip("/"))
-
+            output_path = os.path.join(output_folder, relative_path.strip("/"))
             logger.info("Downloading %s to %s", url, output_path)
-            download_file(url, output_path, asset_type)
+            result = download_file(url, output_path, asset_type)
 
-def process_html(file):
+            if result:
+                process_html(output_path, url_to_filename)
+
+def process_html(file, url_to_filename):
     """Process the HTML file to fix asset links and format the HTML."""
 
     with open(file, 'r', encoding='utf-8') as f:
@@ -320,27 +371,70 @@ def process_html(file):
     # Process JS
     for tag in soup.find_all([ 'script']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/js/", tag['src'])
+            original_url = tag['src']
+            # Look up the mapped UUID filename
+            if original_url in url_to_filename:
+                tag['src'] = url_to_filename[original_url]
+            else:
+                # Fallback: try to find by original filename
+                filename = os.path.basename(urlparse(original_url).path)
+                if filename in url_to_filename:
+                    tag['src'] = url_to_filename[filename]
+            # Remove integrity attribute since the file content may have been modified
+            if tag.has_attr('integrity'):
+                del tag['integrity']
 
     # Process CSS
     for tag in soup.find_all([ 'link'], rel="stylesheet"):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/css/", tag['href'])
+            original_url = tag['href']
+            # Look up the mapped UUID filename
+            if original_url in url_to_filename:
+                tag['href'] = url_to_filename[original_url]
+            else:
+                # Fallback: try to find by original filename
+                filename = os.path.basename(urlparse(original_url).path)
+                if filename in url_to_filename:
+                    tag['href'] = url_to_filename[filename]
+            # Remove integrity attribute since the file content may have been modified
+            if tag.has_attr('integrity'):
+                del tag['integrity']
 
     # Process links like favicons
     for tag in soup.find_all([ 'link'], rel=["apple-touch-icon", "shortcut icon"]):
         if tag.has_attr('href') and re.match(CDN_URL_REGEX, tag['href']) is not None:
-            tag['href'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['href']).replace("//", "/")
+            original_url = tag['href']
+            # Look up the mapped UUID filename
+            if original_url in url_to_filename:
+                tag['href'] = url_to_filename[original_url]
+            else:
+                filename = os.path.basename(urlparse(original_url).path)
+                if filename in url_to_filename:
+                    tag['href'] = url_to_filename[filename]
 
     # Process IMG
     for tag in soup.find_all([ 'img']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/images/", tag['src']).replace("//", "/")
+            original_url = tag['src']
+            # Look up the mapped UUID filename
+            if original_url in url_to_filename:
+                tag['src'] = url_to_filename[original_url]
+            else:
+                filename = os.path.basename(urlparse(original_url).path)
+                if filename in url_to_filename:
+                    tag['src'] = url_to_filename[filename]
 
     # Process Media
     for tag in soup.find_all([ 'video', 'audio']):
         if tag.has_attr('src') and re.match(CDN_URL_REGEX, tag['src']) is not None:
-            tag['src'] = re.sub(SCAN_CDN_REGEX, "/media/", tag['src'])
+            original_url = tag['src']
+            # Look up the mapped UUID filename
+            if original_url in url_to_filename:
+                tag['src'] = url_to_filename[original_url]
+            else:
+                filename = os.path.basename(urlparse(original_url).path)
+                if filename in url_to_filename:
+                    tag['src'] = url_to_filename[filename]
 
     # Format and unminify the HTML
     formatted_html = soup.prettify()
@@ -351,8 +445,8 @@ def process_html(file):
 
     logger.debug("Processed %s", file)
 
-def process_css(file_path, output_folder):
-    """Process the CSS file to fix asset links."""
+def process_css(file_path, output_folder, url_to_filename):
+    """Process the CSS file to fix asset links and download referenced assets."""
 
     if not os.path.exists(file_path):
         logger.error("CSS folder does not exist: %s", file_path)
@@ -362,27 +456,80 @@ def process_css(file_path, output_folder):
         content = f.read()
         logger.info("Processing CSS file: %s", file_path)
 
-        # Find all image URLs in the CSS content
-        image_urls = re.findall(SCAN_CDN_REGEX, content)
-        print("Found %d image URLs in CSS file", image_urls)
-        for match in image_urls:
-            full_url = match[0]
+        # Find all asset URLs in the CSS content (images, fonts, etc.)
+        asset_urls = re.findall(SCAN_CDN_REGEX, content)
+        logger.info("Found %d asset URLs in CSS file", len(asset_urls))
+        for full_url in asset_urls:
             if full_url:
-                # Download the image to the output path/images
-                image_output_path = os.path.join(os.path.dirname(output_folder), "images", os.path.basename(full_url))
+                # Clean URL: strip whitespace and trailing %20 (URL-encoded space)
+                full_url = full_url.rstrip()
+                while full_url.endswith('%20'):
+                    full_url = full_url[:-3]
+
+                # Skip if already downloaded
+                if full_url in url_to_filename:
+                    continue
+
+                # Skip URLs without file extensions (likely incomplete/malformed)
+                parsed_path = urlparse(full_url).path
+                original_filename = os.path.basename(parsed_path)
+                if '.' not in original_filename:
+                    logger.warning("Skipping URL without file extension: %s", full_url)
+                    continue
+
+                # Determine asset type by file extension
+                ext = '.' + original_filename.lower().split('.')[-1]
+                ext_name = ext[1:]  # Without the dot
+                if ext_name in ['woff', 'woff2', 'ttf', 'eot', 'otf']:
+                    asset_folder = "fonts"
+                elif ext_name in ['js']:
+                    asset_folder = "js"
+                elif ext_name in ['css']:
+                    asset_folder = "css"
+                elif ext_name in ['mp4', 'webm', 'ogg', 'mp3', 'wav']:
+                    asset_folder = "media"
+                else:
+                    asset_folder = "images"
+
+                # Generate UUID-based filename
+                uuid_filename = str(uuid.uuid4()) + ext
+                asset_output_path = os.path.join(output_folder, asset_folder, uuid_filename)
+
                 try:
                     response = requests.get(full_url, stream=True, timeout=10)
                     response.raise_for_status()
-                    os.makedirs(os.path.dirname(image_output_path), exist_ok=True)
-                    with open(image_output_path, 'wb') as img_file:
+                    os.makedirs(os.path.dirname(asset_output_path), exist_ok=True)
+                    with open(asset_output_path, 'wb') as asset_file:
                         for chunk in response.iter_content(chunk_size=8192):
-                            img_file.write(chunk)
-                    logger.info("Downloaded image: %s", full_url)
+                            asset_file.write(chunk)
+                    logger.info("Downloaded %s asset: %s -> %s", asset_folder, full_url, uuid_filename)
+                    # Add to mapping
+                    url_to_filename[full_url] = f"/{asset_folder}/{uuid_filename}"
+                    url_to_filename[original_filename] = f"/{asset_folder}/{uuid_filename}"
                 except requests.RequestException as e:
-                    logger.error("Failed to download image %s: %s", full_url, e)
+                    logger.error("Failed to download asset %s: %s", full_url, e)
 
-        # Replace CDN URLs with local paths for images
-        updated_content = re.sub(SCAN_CDN_REGEX, "/images/", content).replace("//", "/")
+        # Replace CDN URLs with UUID-based local paths
+        def replace_cdn_url(match):
+            url = match.group(0).rstrip()
+            while url.endswith('%20'):
+                url = url[:-3]
+
+            # Look up in mapping
+            if url in url_to_filename:
+                return url_to_filename[url]
+
+            # Try by filename
+            parsed_url = urlparse(url)
+            filename = os.path.basename(parsed_url.path)
+            if filename in url_to_filename:
+                return url_to_filename[filename]
+
+            # If not found, return original (shouldn't happen)
+            logger.warning("No mapping found for URL in CSS: %s", url)
+            return url
+
+        updated_content = re.sub(SCAN_CDN_REGEX, replace_cdn_url, content)
         f.seek(0)
         f.write(updated_content)
         f.truncate()
