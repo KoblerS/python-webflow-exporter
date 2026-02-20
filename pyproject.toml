@@ -15,7 +15,7 @@ dependencies = [
     "argparse==1.4.0",
     "beautifulsoup4==4.14.3",
     "halo==0.0.31",
-    "pylint==3.3.7",
+    "pylint==4.0.5",
     "setuptools==80.9.0"
 ]
 
