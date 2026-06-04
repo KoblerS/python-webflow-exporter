@@ -16,7 +16,7 @@ dependencies = [
     "beautifulsoup4==4.14.3",
     "halo==0.0.31",
     "pylint==3.3.7",
-    "setuptools==80.9.0"
+    "setuptools==82.0.1"
 ]
 
 [tool.setuptools]
