@@ -112,7 +112,11 @@ def main():
 def check_url(url):
     """Check if the URL is a valid Webflow URL."""
 
-    request = requests.get(url, timeout=10)
+    try:
+        request = requests.get(url, timeout=10)
+    except requests.RequestException as error:
+        logger.error("Error while requesting the URL: %s", error)
+        return False
     if request.status_code != 200:
         logger.error("Invalid URL. Please provide a valid Webflow URL.")
         return False
